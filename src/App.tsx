@@ -72,8 +72,8 @@ export default function App() {
     }
   };
 
-  const handleLoginSuccess = (agencyName: string, email: string) => {
-    const session = { name: agencyName, email };
+  const handleLoginSuccess = (agencyName: string, email: string, agencyId: string) => {
+    const session = { name: agencyName, email, agencyId };
     localStorage.setItem('estateai_user', JSON.stringify(session));
     setUser(session);
   };

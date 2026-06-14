@@ -23,18 +23,18 @@ async function startServer() {
   });
 
   // Agency Endpoints
-  app.get('/api/agency', (req, res) => {
+  app.get('/api/agency', async (req, res) => {
     try {
-      const data = dbStore.getAgency();
+      const data = await dbStore.getAgency();
       res.json(data);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/agency', (req, res) => {
+  app.post('/api/agency', async (req, res) => {
     try {
-      const updated = dbStore.updateAgency(req.body);
+      const updated = await dbStore.updateAgency(req.body);
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -42,23 +42,23 @@ async function startServer() {
   });
 
   // Properties Listings Endpoints
-  app.get('/api/properties', (req, res) => {
+  app.get('/api/properties', async (req, res) => {
     try {
-      const data = dbStore.getProperties();
+      const data = await dbStore.getProperties();
       res.json(data);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/properties', (req, res) => {
+  app.post('/api/properties', async (req, res) => {
     try {
       const { title, size, city, area, type, purpose, price, price_display, bedrooms, bathrooms, furnished_status, description, image_urls, video_url, map_pin, latitude, longitude, location_notes } = req.body;
       if (!title || !size || !city || !area || !type || !purpose || !price) {
         return res.status(400).json({ error: "Missing required property parameters." });
       }
       
-      const newProperty = dbStore.addProperty({
+      const newProperty = await dbStore.addProperty({
         title,
         size,
         city,
@@ -85,18 +85,18 @@ async function startServer() {
     }
   });
 
-  app.put('/api/properties/:id', (req, res) => {
+  app.put('/api/properties/:id', async (req, res) => {
     try {
-      const updated = dbStore.updateProperty(req.params.id, req.body);
+      const updated = await dbStore.updateProperty(req.params.id, req.body);
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.delete('/api/properties/:id', (req, res) => {
+  app.delete('/api/properties/:id', async (req, res) => {
     try {
-      const success = dbStore.deleteProperty(req.params.id);
+      const success = await dbStore.deleteProperty(req.params.id);
       res.json({ success });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -104,22 +104,22 @@ async function startServer() {
   });
 
   // Leads Endpoints
-  app.get('/api/leads', (req, res) => {
+  app.get('/api/leads', async (req, res) => {
     try {
-      const leads = dbStore.getLeads();
+      const leads = await dbStore.getLeads();
       res.json(leads);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/leads', (req, res) => {
+  app.post('/api/leads', async (req, res) => {
     try {
       const { name, phone, email, status, requirement_notes } = req.body;
       if (!name || !phone) {
         return res.status(400).json({ error: "Name and Phone are mandatory." });
       }
-      const lead = dbStore.addLead({
+      const lead = await dbStore.addLead({
         name,
         phone,
         email,
@@ -132,9 +132,9 @@ async function startServer() {
     }
   });
 
-  app.put('/api/leads/:id', (req, res) => {
+  app.put('/api/leads/:id', async (req, res) => {
     try {
-      const updated = dbStore.updateLead(req.params.id, req.body);
+      const updated = await dbStore.updateLead(req.params.id, req.body);
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -142,18 +142,18 @@ async function startServer() {
   });
 
   // Unique Lead AI Memory Endpoints
-  app.get('/api/leads/:leadId/memory', (req, res) => {
+  app.get('/api/leads/:leadId/memory', async (req, res) => {
     try {
-      const memory = dbStore.getLeadMemory(req.params.leadId);
+      const memory = await dbStore.getLeadMemory(req.params.leadId);
       res.json(memory);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.put('/api/leads/:leadId/memory', (req, res) => {
+  app.put('/api/leads/:leadId/memory', async (req, res) => {
     try {
-      const updated = dbStore.updateLeadMemory(req.params.leadId, req.body);
+      const updated = await dbStore.updateLeadMemory(req.params.leadId, req.body);
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -161,9 +161,9 @@ async function startServer() {
   });
 
   // Chat/Dialog Log Get Endpoint
-  app.get('/api/leads/:leadId/chat', (req, res) => {
+  app.get('/api/leads/:leadId/chat', async (req, res) => {
     try {
-      const chat = dbStore.getConversations(req.params.leadId);
+      const chat = await dbStore.getConversations(req.params.leadId);
       res.json(chat);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -181,15 +181,15 @@ async function startServer() {
 
     try {
       // 1. Record the Customer message
-      const customerMsg = dbStore.addMessage(leadId, 'customer', message);
+      const customerMsg = await dbStore.addMessage(leadId, 'customer', message);
       
       if (!simulateReply) {
         return res.json({ status: 'recorded', message: customerMsg });
       }
 
       // 2. Load context history and memory
-      const history = dbStore.getConversations(leadId);
-      const memory = dbStore.getLeadMemory(leadId);
+      const history = await dbStore.getConversations(leadId);
+      const memory = await dbStore.getLeadMemory(leadId);
 
       // 3. Trigger context-brain parser
       const parsedIntent = await parseIntentAndContext(message, history, memory);
@@ -227,7 +227,8 @@ async function startServer() {
       }
 
       // 5. Query matching engine for actual property records
-      const matchedCRMProps = matchCRMProperties(memory.current_requirement);
+      const allProperties = await dbStore.getProperties();
+      const matchedCRMProps = matchCRMProperties(memory.current_requirement, allProperties);
 
       // 6. If search, register new Options array in Memory block
       if (parsedIntent.message_type === 'new_search') {
@@ -260,7 +261,7 @@ async function startServer() {
         memory.visit_preference = parsedIntent.customer_intent_summary || 'Requested visit';
         
         // Auto-schedule a physical followup within CRM database!
-        dbStore.addFollowUp({
+        await dbStore.addFollowUp({
           lead_id: leadId,
           property_id: memory.active_property_id || undefined,
           follow_up_date: new Date(Date.now() + 3600000 * 48).toISOString(), // set default 2 days out
@@ -283,11 +284,11 @@ async function startServer() {
       const answer = await composeAIResponse(message, parsedIntent, memory, history, matchedCRMProps);
 
       // 10. Record AI response message
-      const aiMsgObj = dbStore.addMessage(leadId, 'agent_ai', answer, parsedIntent);
+      const aiMsgObj = await dbStore.addMessage(leadId, 'agent_ai', answer, parsedIntent);
 
       // 11. Sync statuses and persist memory shifts
-      dbStore.updateLead(leadId, { status: parsedIntent.lead_status });
-      dbStore.updateLeadMemory(leadId, memory);
+      await dbStore.updateLead(leadId, { status: parsedIntent.lead_status });
+      await dbStore.updateLeadMemory(leadId, memory);
 
       res.json({
         userMessage: customerMsg,
@@ -304,22 +305,22 @@ async function startServer() {
   });
 
   // Follow-ups Endpoints
-  app.get('/api/followups', (req, res) => {
+  app.get('/api/followups', async (req, res) => {
     try {
-      const data = dbStore.getFollowUps();
+      const data = await dbStore.getFollowUps();
       res.json(data);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/followups', (req, res) => {
+  app.post('/api/followups', async (req, res) => {
     try {
       const { lead_id, property_id, follow_up_date, type, notes } = req.body;
       if (!lead_id || !follow_up_date || !type) {
         return res.status(400).json({ error: "Missing required fields (lead_id, follow_up_date, type)." });
       }
-      const added = dbStore.addFollowUp({
+      const added = await dbStore.addFollowUp({
         lead_id,
         property_id,
         follow_up_date,
@@ -333,18 +334,18 @@ async function startServer() {
     }
   });
 
-  app.put('/api/followups/:id', (req, res) => {
+  app.put('/api/followups/:id', async (req, res) => {
     try {
-      const updated = dbStore.updateFollowUp(req.params.id, req.body);
+      const updated = await dbStore.updateFollowUp(req.params.id, req.body);
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.delete('/api/followups/:id', (req, res) => {
+  app.delete('/api/followups/:id', async (req, res) => {
     try {
-      const success = dbStore.deleteFollowUp(req.params.id);
+      const success = await dbStore.deleteFollowUp(req.params.id);
       res.json({ success });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

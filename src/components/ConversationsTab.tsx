@@ -16,6 +16,7 @@ export default function ConversationsTab({ leads, onLeadStatusChanged }: Convers
   const [customMsg, setCustomMsg] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
+  const [scenariosCollapsed, setScenariosCollapsed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Predefined scenario buttons to test user's requirements with 1-click
@@ -358,21 +359,30 @@ export default function ConversationsTab({ leads, onLeadStatusChanged }: Convers
                   <Brain className="w-3.5 h-3.5" />
                   1-Click Customer Test Scenario Simulator
                 </span>
-                <span className="text-[10px] text-brand-slate-200 italic">Select to simulate instant customer replies</span>
+                <button
+                  type="button"
+                  onClick={() => setScenariosCollapsed(!scenariosCollapsed)}
+                  className="text-[10px] text-brand-teal-600 hover:text-brand-teal-700 font-bold flex items-center gap-1 cursor-pointer select-none bg-brand-teal-50 hover:bg-brand-teal-100 border border-brand-teal-200 px-2 py-1 rounded"
+                >
+                  {scenariosCollapsed ? 'Show Scenarios ▾' : 'Hide Scenarios ▴'}
+                </button>
               </div>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {TEST_SCENARIOS.map((ts, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSendMessage(ts.msg)}
-                    disabled={sending}
-                    className="bg-brand-slate-100 hover:bg-brand-teal-50 border border-brand-slate-200 hover:border-brand-teal-200 hover:text-brand-teal-700 px-2.5 py-1.5 rounded-lg text-left text-[11px] font-semibold text-brand-slate-900 select-none cursor-pointer transition-colors max-w-[210px] truncate"
-                    title={ts.desc}
-                  >
-                    🚀 {ts.label}
-                  </button>
-                ))}
-              </div>
+
+              {!scenariosCollapsed && (
+                <div className="flex flex-wrap gap-2 mb-3 max-h-[140px] overflow-y-auto">
+                  {TEST_SCENARIOS.map((ts, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSendMessage(ts.msg)}
+                      disabled={sending}
+                      className="bg-brand-slate-100 hover:bg-brand-teal-50 border border-brand-slate-200 hover:border-brand-teal-200 hover:text-brand-teal-700 px-2.5 py-1.5 rounded-lg text-left text-[11px] font-semibold text-brand-slate-900 select-none cursor-pointer transition-colors max-w-[210px] truncate"
+                      title={ts.desc}
+                    >
+                      🚀 {ts.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Manual input box */}
               <div className="flex gap-2">

@@ -6,9 +6,7 @@ import { dbStore, parseBudgetToNumeric } from './db';
 import { ParsedAIIntent, Property, LeadAIMemory, ConversationMessage } from '../src/types';
 
 // Matching Algorithm
-export function matchCRMProperties(requirement: any): Property[] {
-  const allProperties = dbStore.getProperties();
-  
+export function matchCRMProperties(requirement: any, allProperties: Property[]): Property[] {
   const reqCity = requirement.city ? requirement.city.toLowerCase().trim() : null;
   const reqArea = requirement.area ? requirement.area.toLowerCase().trim() : null;
   const reqAreaGroup = requirement.area_group ? requirement.area_group.toLowerCase().trim() : null;
@@ -80,7 +78,7 @@ export async function composeAIResponse(
   history: ConversationMessage[],
   matchedCRMProps: Property[]
 ): Promise<string> {
-  const agency = dbStore.getAgency();
+  const agency = await dbStore.getAgency();
   const provider = process.env.AI_PROVIDER || 'groq';
   const hasGroqKey = !!process.env.GROQ_API_KEY;
 
@@ -111,7 +109,8 @@ Option ${idx + 1}:
   // Active property details if follow up on option
   let activePropertyFact = '';
   if (memory.active_property_id) {
-    const activeP = dbStore.getProperties().find(p => p.id === memory.active_property_id);
+    const properties = await dbStore.getProperties();
+    const activeP = properties.find(p => p.id === memory.active_property_id);
     if (activeP) {
       activePropertyFact = `
 Currently Discussed Active Option:

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Shield, Sparkles, Building2 } from 'lucide-react';
+import { Shield, Sparkles, Building2, ServerCrash, KeyRound } from 'lucide-react';
 import { motion } from 'motion/react';
+import { authService, isSupabaseConfigured } from '../lib/supabase';
 
 interface SaaSLoginProps {
-  onLoginSuccess: (agencyName: string, email: string) => void;
+  onLoginSuccess: (agencyName: string, email: string, agencyId: string) => void;
 }
 
 export default function SaaSLogin({ onLoginSuccess }: SaaSLoginProps) {
@@ -14,20 +15,48 @@ export default function SaaSLogin({ onLoginSuccess }: SaaSLoginProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const supabaseActive = isSupabaseConfigured();
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setError('Please fill in check parameters.');
+      setError('Please fill in all credentials.');
       return;
     }
+    if (isSignup && !agencyName) {
+      setError('Please specify your agency name.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
-    // Simulate authentication trigger
-    setTimeout(() => {
-      setLoading(false);
-      onLoginSuccess(isSignup ? agencyName : 'Chaudhry & Partners Real Estate', email);
-    }, 800);
+    try {
+      if (isSignup) {
+        const session = await authService.signUp(email, password, agencyName);
+        onLoginSuccess(session.agencyName, session.email, session.agencyId);
+      } else {
+        // If Supabase is active, use authService. Otherwise fall back to local password simulation
+        if (supabaseActive) {
+          const session = await authService.signIn(email, password);
+          onLoginSuccess(session.agencyName, session.email, session.agencyId);
+        } else {
+          // Normal mock sandbox sign-in
+          setTimeout(() => {
+            setLoading(false);
+            onLoginSuccess('Chaudhry & Partners Real Estate', email, 'agency-id-1');
+          }, 800);
+          return;
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Authentication failed. Please verify credentials.');
+    } finally {
+      if (supabaseActive || isSignup) {
+        setLoading(false);
+      }
+    }
   };
 
   return (
@@ -140,11 +169,15 @@ export default function SaaSLogin({ onLoginSuccess }: SaaSLoginProps) {
 
           <div className="bg-brand-slate-950/40 px-8 py-4 border-t border-brand-slate-800/40 flex items-center justify-between">
             <span className="text-[10px] text-brand-slate-200/50 flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-brand-teal-500" />
-              SaaS Continuity Engine Active
+              <Shield className={`w-3.5 h-3.5 ${supabaseActive ? 'text-brand-teal-500' : 'text-amber-500'}`} />
+              {supabaseActive ? 'Supabase Live SaaS Active' : 'Offline Sandbox Database Active'}
             </span>
-            <span className="text-[10px] text-brand-teal-500 font-medium">
-              v1.4 SECURE
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+              supabaseActive 
+                ? 'text-brand-teal-500 bg-brand-teal-500/10' 
+                : 'text-amber-500 bg-amber-500/10'
+            }`}>
+              {supabaseActive ? 'CLOUD-CONNECTED' : 'LOCAL-SANDBOX'}
             </span>
           </div>
         </div>

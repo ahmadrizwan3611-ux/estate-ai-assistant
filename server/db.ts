@@ -1,9 +1,11 @@
 // Server-side database state and persistence manager
+// Supports both Real Supabase Cloud DB and local db.json file-based fallback
 // Location: /server/db.ts
 
 import fs from 'fs';
 import path from 'path';
 import { Agency, Property, Lead, LeadAIMemory, ConversationMessage, FollowUp } from '../src/types';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 const DB_FILE_PATH = path.join(process.cwd(), 'src', 'data', 'db.json');
 
@@ -21,7 +23,6 @@ export function parseBudgetToNumeric(budgetString: string | null): number {
   if (!budgetString) return Infinity;
   
   const text = budgetString.toLowerCase().trim();
-  // Extract number part
   const numMatch = text.match(/([0-9.]+)/);
   if (!numMatch) return Infinity;
   
@@ -37,17 +38,12 @@ export function parseBudgetToNumeric(budgetString: string | null): number {
   if (text.includes('million') || text.includes('m')) {
     return value * 1000000;
   }
-  
-  // Standard raw rupees or thousand-grouped raw units
   if (value < 1000) {
-    // If user writes e.g. "2", assume they mean 2 Crore in context of Marla houses
     return value * 10000000;
   }
-  
   return value;
 }
 
-// High-fidelity Initial Seed properties and data
 const DEFAULT_AGENCY: Agency = {
   id: 'agency-id-1',
   name: 'EstateAI Premier Properties',
@@ -64,7 +60,7 @@ const SEED_PROPERTIES: Property[] = [
     id: 'prop-1',
     agency_id: 'agency-id-1',
     title: '5 Marla in DHA',
-    size: '5 Marla', // MUST copy size field exactly
+    size: '5 Marla',
     city: 'Lahore',
     area: 'DHA Phase 6',
     type: 'House',
@@ -74,13 +70,13 @@ const SEED_PROPERTIES: Property[] = [
     bedrooms: 3,
     bathrooms: 3,
     furnished_status: 'Semi-Furnished',
-    description: 'Outstanding brand new 5 Marla house available for sale in DHA Phase 6 Lahore. This modern structure features a spacious TV lounge, open kitchen, 3 master bedrooms with attached bathrooms, and complete wooden paneling.',
+    description: 'Outstanding brand new 5 Marla house available for sale in DHA Phase 6 Lahore.',
     status: 'Available',
     image_urls: [
       'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80'
     ],
-    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    video_url: '',
     map_pin: 'https://maps.google.com/?q=DHA+Phase+6+Lahore',
     latitude: 31.4697,
     longitude: 74.4485,
@@ -90,9 +86,9 @@ const SEED_PROPERTIES: Property[] = [
     id: 'prop-2',
     agency_id: 'agency-id-1',
     title: '5 Marla House in DHA Phase 6',
-    size: '5 Marla', // MUST copy size field exactly
+    size: '5 Marla',
     city: 'Lahore',
-    area: 'DHA Phase 6Block C',
+    area: 'DHA Phase 6 Block C',
     type: 'House',
     purpose: 'Sale',
     price: 18500000,
@@ -100,7 +96,7 @@ const SEED_PROPERTIES: Property[] = [
     bedrooms: 3,
     bathrooms: 4,
     furnished_status: 'Completed Brand New',
-    description: 'High-end luxury brand new double story 5 Marla house in DHA Phase 6 Lahore, featuring solid woodwork, Spain design tiles, double glazed energy-efficient windows, and 3 bedrooms.',
+    description: 'High-end luxury brand new double story 5 Marla house in DHA Phase 6 Lahore.',
     status: 'Available',
     image_urls: [
       'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
@@ -126,88 +122,16 @@ const SEED_PROPERTIES: Property[] = [
     bedrooms: 5,
     bathrooms: 5,
     furnished_status: 'Unfurnished',
-    description: 'Executive standard double story 10 Marla house in Bahria Town, Lahore. Featuring 5 fully tiled master bedrooms, spacious car porch, 2 kitchens, and premium imported sanity ware. Ready to move.',
+    description: 'Executive standard double story 10 Marla house in Bahria Town, Lahore.',
     status: 'Available',
     image_urls: [
       'https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=800&q=80'
     ],
-    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    video_url: '',
     map_pin: 'https://maps.google.com/?q=Bahria+Town+Lahore',
     latitude: 31.3685,
     longitude: 74.1950,
     location_notes: 'Located in a secure residential block with 24/7 power backup.'
-  },
-  {
-    id: 'prop-4',
-    agency_id: 'agency-id-1',
-    title: '5 Marla Smart Villa in Citi Housing Gujranwala',
-    size: '5 Marla',
-    city: 'Gujranwala',
-    area: 'Citi Housing',
-    type: 'House',
-    purpose: 'Sale',
-    price: 12500000,
-    price_display: 'Rs. 1.25 crore',
-    bedrooms: 3,
-    bathrooms: 3,
-    furnished_status: 'Fully Furnished',
-    description: 'Designer 5 Marla smart villa in Citi Housing Gujranwala. Comes with automation features, high performance security cameras, customized wardrobes, and stylish furniture.',
-    status: 'Available',
-    image_urls: [
-      'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=800&q=80'
-    ],
-    video_url: '',
-    map_pin: 'https://maps.google.com/?q=Citi+Housing+Gujranwala',
-    latitude: 32.2032,
-    longitude: 74.1578,
-    location_notes: 'Immediate master approach near Central Commercial sector.'
-  },
-  {
-    id: 'prop-5',
-    agency_id: 'agency-id-1',
-    title: '1 Kanal Luxury Castle in DHA Phase 5',
-    size: '1 Kanal',
-    city: 'Lahore',
-    area: 'DHA Phase 5',
-    type: 'House',
-    purpose: 'Sale',
-    price: 75000000,
-    price_display: 'Rs. 7.5 crore',
-    bedrooms: 5,
-    bathrooms: 6,
-    furnished_status: 'Fully Furnished',
-    description: 'Royal standard 1 Kanal house available in DHA Phase 5. Modern contemporary architecture design, swimming pool, home theater, landscaped garden, and high grade secure parking.',
-    status: 'Available',
-    image_urls: [
-      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80'
-    ],
-    video_url: '',
-    map_pin: 'https://maps.google.com/?q=DHA+Phase+5+Lahore',
-    latitude: 31.4745,
-    longitude: 74.4285,
-    location_notes: 'Premium phase 5 sector with wide access park entrance.'
-  },
-  {
-    id: 'prop-6',
-    agency_id: 'agency-id-1',
-    title: '5 Marla Plot on installments in DHA Phase 9 Prism',
-    size: '5 Marla',
-    city: 'Lahore',
-    area: 'DHA Phase 9 Prism',
-    type: 'Plot',
-    purpose: 'Sale',
-    price: 6800000,
-    price_display: 'Rs. 68 lakh',
-    bedrooms: undefined,
-    bathrooms: undefined,
-    furnished_status: undefined,
-    description: 'File available for 5 Marla premium block plot in DHA Phase 9 Prism Lahore. Excellent opportunity for investors under easy transfer documentation. Outstanding growth yield potential.',
-    status: 'Available',
-    image_urls: [
-      'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80'
-    ],
-    map_pin: 'https://maps.google.com/?q=DHA+Phase+9+Prism+Lahore',
-    location_notes: 'Direct assignment and on-ground soon.'
   }
 ];
 
@@ -215,29 +139,11 @@ const SEED_LEADS: Lead[] = [
   {
     id: 'lead-1',
     agency_id: 'agency-id-1',
-    name: 'Zain Ul Abideen',
-    phone: '0321-4567890',
-    email: 'zain@example.com',
+    name: 'Ahmed Ali',
+    phone: '0300-1234567',
+    email: 'ahmed@example.com',
     status: 'Warm',
-    requirement_notes: 'Looking for a 5 Marla home in DHA Lahore under 2 crore. Serious buyer but wants to review features first.'
-  },
-  {
-    id: 'lead-2',
-    agency_id: 'agency-id-1',
-    name: 'Hamza Chaudhry',
-    phone: '0300-8765432',
-    email: 'hamza@example.com',
-    status: 'Hot',
-    requirement_notes: 'Urgent 5 Marla site visit in DHA Lahore Phase 6. Needs map pins and wants office deal discussions.'
-  },
-  {
-    id: 'lead-3',
-    agency_id: 'agency-id-1',
-    name: 'Rizwan Khan',
-    phone: '0312-9876543',
-    email: 'rizwan@example.com',
-    status: 'New',
-    requirement_notes: 'First inquiry via WhatsApp. Checking general pricing trend.'
+    requirement_notes: 'Looking for a 5 Marla home in DHA Lahore under 2 crore.'
   }
 ];
 
@@ -279,72 +185,10 @@ const SEED_MEMORIES: Record<string, LeadAIMemory> = {
     last_question_type: 'new_search',
     visit_preference: null,
     missing_info_requests: []
-  },
-  'lead-2': {
-    id: 'mem-2',
-    lead_id: 'lead-2',
-    current_requirement: {
-      city: 'Lahore',
-      area: 'DHA Phase 6',
-      area_group: 'DHA Lahore',
-      property_type: 'House',
-      size: '5 Marla',
-      purpose: 'Sale',
-      max_budget: '2 crore',
-      bedrooms: null
-    },
-    last_matched_options: [
-      {
-        option_number: 1,
-        property_id: 'prop-1',
-        title: '5 Marla in DHA',
-        price: 'Rs. 1.62 crore',
-        size: '5 Marla'
-      },
-      {
-        option_number: 2,
-        property_id: 'prop-2',
-        title: '5 Marla House in DHA Phase 6',
-        price: 'Rs. 1.85 crore',
-        size: '5 Marla'
-      }
-    ],
-    active_property_id: 'prop-2',
-    active_option_number: 2,
-    conversation_summary: 'Customer wants a physical site visit of DHA Phase 6 house. Confirmed hot buyer.',
-    customer_language: 'english_roman_urdu_mix',
-    conversation_stage: 'visit_requested',
-    last_question_type: 'visit_request',
-    visit_preference: 'Sunday Evening',
-    missing_info_requests: []
-  },
-  'lead-3': {
-    id: 'mem-3',
-    lead_id: 'lead-3',
-    current_requirement: {
-      city: null,
-      area: null,
-      area_group: null,
-      property_type: null,
-      size: null,
-      purpose: null,
-      max_budget: null,
-      bedrooms: null
-    },
-    last_matched_options: [],
-    active_property_id: null,
-    active_option_number: null,
-    conversation_summary: 'New customer contact, just joined chat.',
-    customer_language: 'roman_urdu_mix',
-    conversation_stage: 'initial_contact',
-    last_question_type: null,
-    visit_preference: null,
-    missing_info_requests: []
   }
 };
 
 const SEED_CONVERSATIONS: ConversationMessage[] = [
-  // Conversation with Zain
   {
     id: 'msg-1',
     lead_id: 'lead-1',
@@ -356,7 +200,7 @@ const SEED_CONVERSATIONS: ConversationMessage[] = [
     id: 'msg-2',
     lead_id: 'lead-1',
     sender: 'agent_ai',
-    message: `Walaikum Assalam Zain Sahib, I found 2 exact matching properties for your requirement: 5 Marla House in DHA Lahore under Rs. 2 crore.
+    message: `Walaikum Assalam Ahmed Sahib, I found 2 exact matching properties for your requirement: 5 Marla House in DHA Lahore under Rs. 2 crore.
 
 Here are the available options:
 
@@ -364,10 +208,6 @@ Option 1:
 🏠 Property: 5 Marla in DHA
 📏 Size: 5 Marla
 📍 Location: DHA Phase 6, Lahore
-🏘 Area: DHA Phase 6
-🏙 City: Lahore
-🏷 Type: House
-📌 Purpose: Sale
 💰 Price: Rs. 1.62 crore
 🛏 Bedrooms: 3
 🛁 Bathrooms: 3
@@ -377,89 +217,16 @@ Option 2:
 🏠 Property: 5 Marla House in DHA Phase 6
 📏 Size: 5 Marla
 📍 Location: DHA Phase 6, Lahore
-🏘 Area: DHA Phase 6
-🏙 City: Lahore
-🏷 Type: House
-📌 Purpose: Sale
 💰 Price: Rs. 1.85 crore
 🛏 Bedrooms: 3
 ✅ Status: Available
 
-These options match your requirement.
-
-Would you like me to share details, pictures, map pin, or schedule a visit?`,
+Would you like me to share details, pictures, map pin, or schedule a physical visit?`,
     created_at: new Date(Date.now() - 3600000 * 2.9).toISOString()
-  },
-  
-  // Conversation with Hamza
-  {
-    id: 'msg-3',
-    lead_id: 'lead-2',
-    sender: 'customer',
-    message: 'Hamza here, I saw options. Option 2 looks best. Is negotiation possible?',
-    created_at: new Date(Date.now() - 3600000 * 2).toISOString()
-  },
-  {
-    id: 'msg-4',
-    lead_id: 'lead-2',
-    sender: 'agent_ai',
-    message: `Ji Hamza Sahib, Option 2 (5 Marla House in DHA Phase 6) ki demand Rs. 1.85 crore hai. Price par minor negotiation table talks ya meeting ke dauran check ho sakti hai owner se.
-
-Aap kab visit schedule karna pasand karein ge takay main team aur owner ke sath coordinate karwa doon?`,
-    created_at: new Date(Date.now() - 3600000 * 1.95).toISOString()
-  },
-  {
-    id: 'msg-5',
-    lead_id: 'lead-2',
-    sender: 'customer',
-    message: 'Ok, make location visit on Sunday evening. Also send map location.',
-    created_at: new Date(Date.now() - 3600000 * 1.5).toISOString()
-  },
-  {
-    id: 'msg-6',
-    lead_id: 'lead-2',
-    sender: 'agent_ai',
-    message: `Ji Sir, perfect! Maine aap ki Sunday visit request record kar li hai. Hamari team aapse jald confirm kare gi details.
-
-Yeh Option 2 ka Google Maps location pin hai:
-📍 https://maps.google.com/?q=DHA+Phase+6+Lahore+Block+C
-
-Location notes: Walking distance to the sports complex and commercial block.
-
-Main Sunday ko aap ke liye coordinate karwa deta hoon. Office location/timing confirm kar doon?`,
-    created_at: new Date(Date.now() - 3600000 * 1.45).toISOString()
-  },
-
-  // Conversation with Rizwan
-  {
-    id: 'msg-7',
-    lead_id: 'lead-3',
-    sender: 'customer',
-    message: 'AOA, aap k pas DHA Lahore k plots details hain?',
-    created_at: new Date(Date.now() - 1200000).toISOString()
   }
 ];
 
-const SEED_FOLLOWUPS: FollowUp[] = [
-  {
-    id: 'fol-1',
-    lead_id: 'lead-2',
-    property_id: 'prop-2',
-    follow_up_date: new Date(Date.now() + 3600000 * 24).toISOString(), // Tomorrow
-    type: 'Site Visit',
-    notes: 'Sunday Evening visit of 5 Marla house DHA Phase 6 Block C. Client Hamza requested. Share location notes.',
-    status: 'Scheduled'
-  },
-  {
-    id: 'fol-2',
-    lead_id: 'lead-1',
-    property_id: 'prop-1',
-    follow_up_date: new Date(Date.now() - 3600000 * 48).toISOString(), // 2 days ago
-    type: 'Call',
-    notes: 'Initial requirement check. Zain is interested in DHA Phase 6 but of standard pricing under 1.8 crore.',
-    status: 'Completed'
-  }
-];
+const SEED_FOLLOWUPS: FollowUp[] = [];
 
 class MemoryDatabase {
   private data: DatabaseSchema;
@@ -470,7 +237,6 @@ class MemoryDatabase {
 
   private loadData(): DatabaseSchema {
     try {
-      // Ensure folder exists
       const dir = path.dirname(DB_FILE_PATH);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -484,7 +250,6 @@ class MemoryDatabase {
       console.error('Error reading persistence DB, using defaults', e);
     }
 
-    // Default seeded state
     const defaultData: DatabaseSchema = {
       agency: DEFAULT_AGENCY,
       properties: SEED_PROPERTIES,
@@ -510,21 +275,58 @@ class MemoryDatabase {
     }
   }
 
-  public getAgency(): Agency {
+  // --- AGENCY ---
+  public async getAgency(): Promise<Agency> {
+    if (supabase) {
+      // Return workspace details based on user
+      const { data, error } = await supabase.from('agencies').select('*').limit(1).maybeSingle();
+      if (data) return data;
+    }
     return this.data.agency;
   }
 
-  public updateAgency(agencyPatch: Partial<Agency>): Agency {
+  public async updateAgency(agencyPatch: Partial<Agency>): Promise<Agency> {
+    if (supabase) {
+      const current = await this.getAgency();
+      const { data, error } = await supabase
+        .from('agencies')
+        .update(agencyPatch)
+        .eq('id', current.id)
+        .select()
+        .single();
+      if (!error && data) return data;
+    }
+
     this.data.agency = { ...this.data.agency, ...agencyPatch };
     this.saveData(this.data);
     return this.data.agency;
   }
 
-  public getProperties(): Property[] {
+  // --- PROPERTIES ---
+  public async getProperties(): Promise<Property[]> {
+    if (supabase) {
+      const { data, error } = await supabase.from('properties').select('*');
+      if (!error && data) return data;
+    }
     return this.data.properties;
   }
 
-  public addProperty(property: Omit<Property, 'id'>): Property {
+  public async addProperty(property: Omit<Property, 'id'>): Promise<Property> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('properties')
+        .insert({
+          ...property,
+          image_urls: property.image_urls || []
+        })
+        .select()
+        .single();
+      if (!error && data) return data;
+      else {
+        console.error('Error inserting property to Supabase:', error);
+      }
+    }
+
     const newProp: Property = {
       ...property,
       id: `prop-${Date.now()}`
@@ -534,7 +336,17 @@ class MemoryDatabase {
     return newProp;
   }
 
-  public updateProperty(id: string, propertyPatch: Partial<Property>): Property {
+  public async updateProperty(id: string, propertyPatch: Partial<Property>): Promise<Property> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('properties')
+        .update(propertyPatch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (!error && data) return data;
+    }
+
     const idx = this.data.properties.findIndex(p => p.id === id);
     if (idx !== -1) {
       this.data.properties[idx] = { ...this.data.properties[idx], ...propertyPatch };
@@ -544,7 +356,12 @@ class MemoryDatabase {
     throw new Error('Property not found');
   }
 
-  public deleteProperty(id: string): boolean {
+  public async deleteProperty(id: string): Promise<boolean> {
+    if (supabase) {
+      const { error } = await supabase.from('properties').delete().eq('id', id);
+      if (!error) return true;
+    }
+
     const lengthBefore = this.data.properties.length;
     this.data.properties = this.data.properties.filter(p => p.id !== id);
     if (this.data.properties.length !== lengthBefore) {
@@ -554,22 +371,67 @@ class MemoryDatabase {
     return false;
   }
 
-  public getLeads(): Lead[] {
+  // --- LEADS ---
+  public async getLeads(): Promise<Lead[]> {
+    if (supabase) {
+      const { data, error } = await supabase.from('leads').select('*');
+      if (!error && data) return data;
+    }
     return this.data.leads;
   }
 
-  public addLead(lead: Omit<Lead, 'id'>): Lead {
-    const leadId = `lead-${Date.now()}`;
+  public async addLead(lead: Omit<Lead, 'id'>): Promise<Lead> {
+    const freshId = `lead-${Date.now()}`;
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('leads')
+        .insert({
+          name: lead.name,
+          phone: lead.phone,
+          email: lead.email,
+          status: lead.status || 'New',
+          requirement_notes: lead.requirement_notes || ''
+        })
+        .select()
+        .single();
+        
+      if (!error && data) {
+        // Also auto initialize raw memory and conversation
+        await supabase.from('lead_ai_memory').insert({
+          lead_id: data.id,
+          current_requirement: {
+            city: null,
+            area: null,
+            area_group: null,
+            property_type: null,
+            size: null,
+            purpose: null,
+            max_budget: null
+          }
+        });
+
+        await supabase.from('conversations').insert({
+          lead_id: data.id,
+          sender: 'agent_ai',
+          message: `Assalam-o-Alaikum Sir/Ma'am! Warm welcome. Main EstateAI Continuity expert assistant hoon. Aap kis city aur location par property talash kar rahe hain?`
+        });
+
+        return data;
+      } else {
+        console.error('Failed to create lead in Supabase:', error);
+      }
+    }
+
     const newLead: Lead = {
       ...lead,
-      id: leadId
+      id: freshId
     };
     this.data.leads.push(newLead);
     
     // Auto-create blank AI memory
-    this.data.lead_ai_memory[leadId] = {
+    this.data.lead_ai_memory[freshId] = {
       id: `mem-${Date.now()}`,
-      lead_id: leadId,
+      lead_id: freshId,
       current_requirement: {
         city: null,
         area: null,
@@ -594,9 +456,9 @@ class MemoryDatabase {
     // Add immediate welcoming conversation message
     this.data.conversations.push({
       id: `msg-${Date.now()}`,
-      lead_id: leadId,
+      lead_id: freshId,
       sender: 'agent_ai',
-      message: `Assalam-o-Alaikum Sir/Ma'am! Warm welcome to ${this.data.agency.name}. Main EstateAI Assistant hoon. Aap kis city aur location par property talash kar rahe hain?`,
+      message: `Assalam-o-Alaikum Sir/Ma'am! Warm welcome. Main EstateAI Continuity expert assistant hoon. Aap kis city aur location par property talash kar rahe hain?`,
       created_at: new Date().toISOString()
     });
 
@@ -604,7 +466,17 @@ class MemoryDatabase {
     return newLead;
   }
 
-  public updateLead(id: string, leadPatch: Partial<Lead>): Lead {
+  public async updateLead(id: string, leadPatch: Partial<Lead>): Promise<Lead> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('leads')
+        .update(leadPatch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (!error && data) return data;
+    }
+
     const idx = this.data.leads.findIndex(l => l.id === id);
     if (idx !== -1) {
       this.data.leads[idx] = { ...this.data.leads[idx], ...leadPatch };
@@ -614,7 +486,17 @@ class MemoryDatabase {
     throw new Error('Lead not found');
   }
 
-  public getLeadMemory(leadId: string): LeadAIMemory {
+  // --- MEMORY ---
+  public async getLeadMemory(leadId: string): Promise<LeadAIMemory> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('lead_ai_memory')
+        .select('*')
+        .eq('lead_id', leadId)
+        .maybeSingle();
+      if (!error && data) return data;
+    }
+
     if (!this.data.lead_ai_memory[leadId]) {
       this.data.lead_ai_memory[leadId] = {
         id: `mem-${Date.now()}`,
@@ -644,8 +526,28 @@ class MemoryDatabase {
     return this.data.lead_ai_memory[leadId];
   }
 
-  public updateLeadMemory(leadId: string, memoryPatch: Partial<LeadAIMemory>): LeadAIMemory {
-    const currentMemory = this.getLeadMemory(leadId);
+  public async updateLeadMemory(leadId: string, memoryPatch: Partial<LeadAIMemory>): Promise<LeadAIMemory> {
+    if (supabase) {
+      const current = await this.getLeadMemory(leadId);
+      const requirementMerged = {
+        ...current.current_requirement,
+        ...(memoryPatch.current_requirement || {})
+      };
+      const writeMemory = {
+        ...current,
+        ...memoryPatch,
+        current_requirement: requirementMerged
+      };
+      
+      const { data, error } = await supabase
+        .from('lead_ai_memory')
+        .upsert(writeMemory)
+        .select()
+        .single();
+      if (!error && data) return data;
+    }
+
+    const currentMemory = await this.getLeadMemory(leadId);
     this.data.lead_ai_memory[leadId] = {
       ...currentMemory,
       ...memoryPatch,
@@ -659,11 +561,34 @@ class MemoryDatabase {
     return this.data.lead_ai_memory[leadId];
   }
 
-  public getConversations(leadId: string): ConversationMessage[] {
+  // --- CONVERSATIONS ---
+  public async getConversations(leadId: string): Promise<ConversationMessage[]> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: true });
+      if (!error && data) return data;
+    }
     return this.data.conversations.filter(c => c.lead_id === leadId);
   }
 
-  public addMessage(leadId: string, sender: 'customer' | 'agent_ai' | 'agent_manual', message: string, parsedIntent?: any): ConversationMessage {
+  public async addMessage(leadId: string, sender: 'customer' | 'agent_ai' | 'agent_manual', message: string, parsedIntent?: any): Promise<ConversationMessage> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('conversations')
+        .insert({
+          lead_id: leadId,
+          sender,
+          message,
+          parsed_intent: parsedIntent
+        })
+        .select()
+        .single();
+      if (!error && data) return data;
+    }
+
     const newMsg: ConversationMessage = {
       id: `msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       lead_id: leadId,
@@ -677,11 +602,32 @@ class MemoryDatabase {
     return newMsg;
   }
 
-  public getFollowUps(): FollowUp[] {
+  // --- FOLLOW-UPS ---
+  public async getFollowUps(): Promise<FollowUp[]> {
+    if (supabase) {
+      const { data, error } = await supabase.from('follow_ups').select('*');
+      if (!error && data) return data;
+    }
     return this.data.follow_ups;
   }
 
-  public addFollowUp(followUp: Omit<FollowUp, 'id'>): FollowUp {
+  public async addFollowUp(followUp: Omit<FollowUp, 'id'>): Promise<FollowUp> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('follow_ups')
+        .insert({
+          lead_id: followUp.lead_id,
+          property_id: followUp.property_id || null,
+          follow_up_date: followUp.follow_up_date,
+          type: followUp.type,
+          notes: followUp.notes,
+          status: followUp.status || 'Scheduled'
+        })
+        .select()
+        .single();
+      if (!error && data) return data;
+    }
+
     const newFollowUp: FollowUp = {
       ...followUp,
       id: `fol-${Date.now()}`
@@ -691,7 +637,17 @@ class MemoryDatabase {
     return newFollowUp;
   }
 
-  public updateFollowUp(id: string, followUpPatch: Partial<FollowUp>): FollowUp {
+  public async updateFollowUp(id: string, followUpPatch: Partial<FollowUp>): Promise<FollowUp> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('follow_ups')
+        .update(followUpPatch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (!error && data) return data;
+    }
+
     const idx = this.data.follow_ups.findIndex(f => f.id === id);
     if (idx !== -1) {
       this.data.follow_ups[idx] = { ...this.data.follow_ups[idx], ...followUpPatch };
@@ -701,7 +657,12 @@ class MemoryDatabase {
     throw new Error('Followup not found');
   }
 
-  public deleteFollowUp(id: string): boolean {
+  public async deleteFollowUp(id: string): Promise<boolean> {
+    if (supabase) {
+      const { error } = await supabase.from('follow_ups').delete().eq('id', id);
+      if (!error) return true;
+    }
+
     const before = this.data.follow_ups.length;
     this.data.follow_ups = this.data.follow_ups.filter(f => f.id !== id);
     if (this.data.follow_ups.length !== before) {
