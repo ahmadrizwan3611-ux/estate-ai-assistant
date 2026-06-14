@@ -21,6 +21,11 @@ import LeadTab from './components/LeadTab';
 import ConversationsTab from './components/ConversationsTab';
 import FollowupsTab from './components/FollowupsTab';
 import SettingsTab from './components/SettingsTab';
+import WebsiteBuilderTab from './components/WebsiteBuilderTab';
+import TeamTab from './components/TeamTab';
+import IntegrationsTab from './components/IntegrationsTab';
+import BillingTab from './components/BillingTab';
+import PublicPortal from './components/PublicPortal';
 import { Property, Lead, FollowUp, Agency } from './types';
 
 export default function App() {
@@ -95,6 +100,11 @@ export default function App() {
     }
   };
 
+  // Intercept public listing portal route
+  if (window.location.pathname.startsWith('/site/')) {
+    return <PublicPortal />;
+  }
+
   if (!user) {
     return <SaaSLogin onLoginSuccess={handleLoginSuccess} />;
   }
@@ -105,6 +115,10 @@ export default function App() {
     { id: 'properties', label: 'CRM Listings', icon: Home },
     { id: 'leads', label: 'Customer Leads', icon: Users },
     { id: 'followups', label: 'Site Visits', icon: Calendar },
+    { id: 'builder', label: 'Website Builder', icon: Building2 },
+    { id: 'team', label: 'Team Members', icon: Users },
+    { id: 'integrations', label: 'Connected Apps', icon: Sliders },
+    { id: 'billing', label: 'Billing & Quotas', icon: Sparkles },
     { id: 'settings', label: 'AI Presets', icon: Sliders }
   ];
 
@@ -128,7 +142,7 @@ export default function App() {
           </div>
 
           {/* Active Navigation List Tabs */}
-          <nav className="p-4 space-y-1 flex-1">
+          <nav className="p-4 space-y-1 flex-1 h-[calc(100vh-160px)] overflow-y-auto">
             <div className="px-3 mb-2 text-[10px] uppercase tracking-widest text-brand-slate-500 font-bold">Management</div>
             {SIDEBAR_ITEMS.map((item) => {
               const isActive = currentTab === item.id;
@@ -193,6 +207,10 @@ export default function App() {
                  currentTab === 'properties' ? 'Properties CRM' : 
                  currentTab === 'leads' ? 'Customer Leads' : 
                  currentTab === 'followups' ? 'Scheduled Site Visits' : 
+                 currentTab === 'builder' ? 'Agency Site Builder' :
+                 currentTab === 'team' ? 'Roles & Coworkers' :
+                 currentTab === 'integrations' ? 'App Marketplace' :
+                 currentTab === 'billing' ? 'Subscription Plans' :
                  'AI Presets'}
               </span>
             </div>
@@ -201,7 +219,7 @@ export default function App() {
             </span>
           </div>
 
-          <div className="flex items-center gap-6 text-xs text-brand-slate-705">
+          <div className="flex items-center gap-6 text-xs text-brand-slate-755">
             <div className="flex items-center gap-1.5 font-mono text-xs">
               <Clock className="w-3.5 h-3.5 text-brand-teal-500 animate-pulse" />
               <span>UTC Sync: 2026</span>
@@ -273,6 +291,26 @@ export default function App() {
                 {currentTab === 'settings' && (
                   <SettingsTab 
                     onSettingsChanged={fetchCRMDataset} 
+                  />
+                )}
+                {currentTab === 'builder' && (
+                  <WebsiteBuilderTab 
+                    onSettingsChanged={fetchCRMDataset} 
+                  />
+                )}
+                {currentTab === 'team' && (
+                  <TeamTab 
+                    onTeamUpdated={fetchCRMDataset} 
+                  />
+                )}
+                {currentTab === 'integrations' && (
+                  <IntegrationsTab 
+                    onIntegrationsChanged={fetchCRMDataset} 
+                  />
+                )}
+                {currentTab === 'billing' && (
+                  <BillingTab 
+                    onPlanChanged={fetchCRMDataset} 
                   />
                 )}
               </motion.div>

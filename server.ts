@@ -286,9 +286,10 @@ async function startServer() {
       // 10. Record AI response message
       const aiMsgObj = await dbStore.addMessage(leadId, 'agent_ai', answer, parsedIntent);
 
-      // 11. Sync statuses and persist memory shifts
+      // 11. Sync statuses, persist memory shifts, and increment analytics replies usage
       await dbStore.updateLead(leadId, { status: parsedIntent.lead_status });
       await dbStore.updateLeadMemory(leadId, memory);
+      await dbStore.incrementAICounter();
 
       res.json({
         userMessage: customerMsg,
@@ -347,6 +348,396 @@ async function startServer() {
     try {
       const success = await dbStore.deleteFollowUp(req.params.id);
       res.json({ success });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
+  // =========================================================================
+  // --- MODULES ENGINES & Webhooks, Protected SaaS Dashboard Endpoints ---
+  // =========================================================================
+
+  // 1. AGENCY WEBSITE BUILDER + PUBLIC PAGES (SETTINGS GET/PUT)
+  app.get('/api/website-settings', async (req, res) => {
+    try {
+      const data = await dbStore.getWebsiteSettings();
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/website-settings', async (req, res) => {
+    try {
+      const updated = await dbStore.updateWebsiteSettings(req.body);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public portal lookups (slug-based agency landing context)
+  app.get('/api/public/site/:slug', async (req, res) => {
+    try {
+      const data = await dbStore.getWebsiteSettingsBySlug(req.params.slug);
+      if (!data) {
+        return res.status(404).json({ error: 'Portals agency page not found with this slug.' });
+      }
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/public/site/:slug/property/:propertyId', async (req, res) => {
+    try {
+      const data = await dbStore.getWebsiteSettingsBySlug(req.params.slug);
+      if (!data) {
+        return res.status(404).json({ error: 'Agency clinic settings not found.' });
+      }
+      const prop = data.properties.find(p => p.id === req.params.propertyId);
+      if (!prop) {
+        return res.status(404).json({ error: 'Listed property detail not found.' });
+      }
+      res.json({ property: prop, site: data });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public visitor lead capture inquiry submissions (with Continuity Memory injections)
+  app.post('/api/public/site/:slug/lead', async (req, res) => {
+    try {
+      const { name, phone, email, interested_property_id, message } = req.body;
+      if (!name || !phone) {
+        return res.status(400).json({ error: 'Name and phone fields are mandatory.' });
+      }
+
+      const addedLead = await dbStore.addLead({
+        name,
+        phone,
+        email,
+        status: 'Warm',
+        source: 'public_website',
+        requirement_notes: `Website form inquiry: "${message || 'Requests property details.'}"` + 
+          (interested_property_id ? ` (CRM Property Refer ID: ${interested_property_id})` : '')
+      });
+
+      // Inject default memory stage context
+      const propList = await dbStore.getProperties();
+      const matchedProp = propList.find(p => p.id === interested_property_id);
+      const matchedSummaryText = matchedProp 
+        ? `Website inquiry received: Interested specifically in "${matchedProp.title}" listed in ${matchedProp.area} (Size: ${matchedProp.size}, Price: ${matchedProp.price_display})`
+        : `Website inquiry received. Context notes: ${message || 'Wants contact.'}`;
+
+      await dbStore.updateLeadMemory(addedLead.id, {
+        conversation_stage: 'public_website_inquiry',
+        conversation_summary: matchedSummaryText,
+        customer_language: 'english_roman_urdu_mix',
+        active_property_id: interested_property_id || null,
+        last_question_type: 'site_inquiry'
+      });
+
+      res.json({ success: true, lead: addedLead });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public visitor traffic events logging (site views, property detail opens, search terms tracker)
+  app.post('/api/public/site/:slug/event', async (req, res) => {
+    try {
+      const { event_type, property_id, path, visitor_id, metadata } = req.body;
+      if (!event_type || !path) {
+        return res.status(400).json({ error: 'Required event parameters missing.' });
+      }
+      const addedEvent = await dbStore.addSiteEvent({
+        agency_id: 'agency-id-1',
+        event_type,
+        property_id,
+        path,
+        visitor_id,
+        metadata
+      });
+      res.json({ success: true, event: addedEvent });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // 2. ANALYTICS METRICS OVERVIEW
+  app.get('/api/analytics/overview', async (req, res) => {
+    try {
+      const events = await dbStore.getSiteEvents();
+      const counters = await dbStore.getUsageCounters();
+      const properties = await dbStore.getProperties();
+      const leads = await dbStore.getLeads();
+      const followUps = await dbStore.getFollowUps();
+
+      res.json({
+        events,
+        usage: counters,
+        metrics: {
+          totalPropertiesCount: properties.length,
+          totalLeadsCount: leads.length,
+          totalVisitsCount: followUps.filter(f => f.type === 'Site Visit').length
+        }
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // 3. TEAM INTERFACES 
+  app.get('/api/team', async (req, res) => {
+    try {
+      const data = await dbStore.getTeamMembers();
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/team', async (req, res) => {
+    try {
+      const { invited_email, name, role } = req.body;
+      if (!invited_email || !name) {
+        return res.status(400).json({ error: 'Name and email are required to invite team.' });
+      }
+      const newMember = await dbStore.addTeamMember({
+        agency_id: 'agency-id-1',
+        invited_email,
+        name,
+        role: role || 'agent',
+        status: 'invited'
+      });
+      res.json(newMember);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put('/api/team/:id', async (req, res) => {
+    try {
+      const updated = await dbStore.updateTeamMember(req.params.id, req.body);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete('/api/team/:id', async (req, res) => {
+    try {
+      const success = await dbStore.deleteTeamMember(req.params.id);
+      res.json({ success });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // 4. WHATSAPP METRICS / SIMULATION GATEWAYS
+  app.get('/api/whatsapp/settings', async (req, res) => {
+    try {
+      const settings = await dbStore.getWhatsAppSettings();
+      res.json(settings);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/settings', async (req, res) => {
+    try {
+      const updated = await dbStore.updateWhatsAppSettings(req.body);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Verification URL challenge (Meta webhook registration validation)
+  app.get('/api/webhooks/whatsapp', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    if (mode && token) {
+      if (mode === 'subscribe' && token === 'estateai_verify_token_secure') {
+        console.log('WhatsApp Webhook Handshake Verification succeeded!');
+        return res.status(200).send(challenge);
+      }
+      return res.status(403).send('Verification token mismatch.');
+    }
+    res.status(200).json({ status: 'whatsapp_webhook_simulator_live' });
+  });
+
+  // Recieving webhooks payload from Meta servers
+  app.post('/api/webhooks/whatsapp', async (req, res) => {
+    try {
+      console.log('Incoming Meta Webhook body:', JSON.stringify(req.body, null, 2));
+      const entry = req.body?.entry?.[0];
+      const change = entry?.changes?.[0];
+      const val = change?.value;
+      const messageObj = val?.messages?.[0];
+      const contactObj = val?.contacts?.[0];
+
+      if (messageObj && messageObj.text?.body) {
+        const fromPhone = messageObj.from; // e.g. "923001234567"
+        const customerName = contactObj?.profile?.name || 'WhatsApp Client';
+        const rawMessageText = messageObj.text.body;
+
+        const leads = await dbStore.getLeads();
+        let targetLead = leads.find(l => {
+          const norm1 = l.phone.replace(/[^0-9]/g, '');
+          const norm2 = fromPhone.replace(/[^0-9]/g, '');
+          return norm1.includes(norm2) || norm2.includes(norm1);
+        });
+
+        if (!targetLead) {
+          targetLead = await dbStore.addLead({
+            name: customerName,
+            phone: fromPhone,
+            status: 'New',
+            source: 'whatsapp_webhook',
+            requirement_notes: 'Created automatically via incoming WhatsApp SMS.'
+          });
+        }
+
+        // Add lead chat logs
+        await dbStore.addMessage(targetLead.id, 'customer', rawMessageText);
+
+        const whatsappConfig = await dbStore.getWhatsAppSettings();
+        if (whatsappConfig.auto_reply_enabled) {
+          // Execute primary AI Continuity parsing & response compositor
+          const history = await dbStore.getConversations(targetLead.id);
+          const memory = await dbStore.getLeadMemory(targetLead.id);
+          const parsedIntent = await parseIntentAndContext(rawMessageText, history, memory);
+
+          const currentReq = memory.current_requirement;
+          if (parsedIntent.requirement_patch) {
+            const patch = parsedIntent.requirement_patch;
+            if (parsedIntent.message_type === 'new_search') {
+              memory.current_requirement = {
+                city: patch.city || currentReq.city || 'Lahore',
+                area: patch.area || currentReq.area,
+                area_group: patch.area || currentReq.area_group,
+                property_type: patch.property_type || currentReq.property_type || 'House',
+                size: patch.size || currentReq.size,
+                purpose: patch.purpose || currentReq.purpose || 'Sale',
+                max_budget: patch.max_budget || currentReq.max_budget,
+                bedrooms: null
+              };
+            } else {
+              if (patch.city) currentReq.city = patch.city;
+              if (patch.area) { currentReq.area = patch.area; currentReq.area_group = patch.area; }
+              if (patch.size) currentReq.size = patch.size;
+              if (patch.property_type) currentReq.property_type = patch.property_type;
+              if (patch.purpose) currentReq.purpose = patch.purpose;
+              if (patch.max_budget) currentReq.max_budget = patch.max_budget;
+            }
+          }
+
+          const allProperties = await dbStore.getProperties();
+          const matchedCRMProps = matchCRMProperties(memory.current_requirement, allProperties);
+
+          if (parsedIntent.message_type === 'new_search') {
+            memory.last_matched_options = matchedCRMProps.slice(0, 3).map((p, idx) => ({
+              option_number: idx + 1,
+              property_id: p.id,
+              title: p.title,
+              price: p.price_display,
+              size: p.size
+            }));
+            memory.active_property_id = null;
+            memory.active_option_number = null;
+          }
+
+          if (parsedIntent.selected_option_number) {
+            const foundOpt = memory.last_matched_options.find(o => o.option_number === parsedIntent.selected_option_number);
+            if (foundOpt) {
+              memory.active_property_id = foundOpt.property_id;
+              memory.active_option_number = foundOpt.option_number;
+            }
+          }
+
+          if (parsedIntent.message_type === 'visit_request') {
+            memory.conversation_stage = 'visit_requested';
+            memory.visit_preference = parsedIntent.customer_intent_summary || 'Requested visit';
+            await dbStore.addFollowUp({
+              lead_id: targetLead.id,
+              property_id: memory.active_property_id || undefined,
+              follow_up_date: new Date(Date.now() + 3600000 * 48).toISOString(),
+              type: 'Site Visit',
+              notes: `WhatsApp visit request logged: ${parsedIntent.customer_intent_summary}`,
+              status: 'Scheduled'
+            });
+          }
+
+          const answer = await composeAIResponse(rawMessageText, parsedIntent, memory, history, matchedCRMProps);
+          await dbStore.addMessage(targetLead.id, 'agent_ai', answer, parsedIntent);
+          await dbStore.updateLead(targetLead.id, { status: parsedIntent.lead_status });
+          await dbStore.updateLeadMemory(targetLead.id, memory);
+          await dbStore.incrementAICounter();
+        }
+      }
+
+      res.status(200).json({ status: 'whatsapp_inbound_recieved_and_simulated' });
+    } catch (e: any) {
+      console.error('Error serving WhatsApp inbound Webhook text:', e);
+      res.status(200).json({ error: e.message }); // Hook never crashes Express
+    }
+  });
+
+  // 5. BILLING & SUBSCRIPTIONS ENGINES
+  app.get('/api/billing/plans', async (req, res) => {
+    try {
+      const plans = await dbStore.getSubscriptionPlans();
+      res.json(plans);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/billing/subscription', async (req, res) => {
+    try {
+      const subscription = await dbStore.getAgencySubscription();
+      const usages = await dbStore.getUsageCounters();
+      res.json({ subscription, usages });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/billing/subscription', async (req, res) => {
+    try {
+      const { plan_id } = req.body;
+      if (!plan_id) {
+        return res.status(400).json({ error: 'plan_id is required' });
+      }
+      const updated = await dbStore.updateAgencySubscription(plan_id);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // 6. INTEGRATION / APPS SYSTEM
+  app.get('/api/integrations', async (req, res) => {
+    try {
+      const catalog = await dbStore.getIntegrationsCatalog();
+      const connected = await dbStore.getAgencyIntegrations();
+      res.json({ catalog, connected });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put('/api/integrations/:key', async (req, res) => {
+    try {
+      const { status, settings } = req.body;
+      const key = req.params.key;
+      const updated = await dbStore.updateAgencyIntegration(key, status, settings);
+      res.json(updated);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
